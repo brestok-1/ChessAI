@@ -26,6 +26,9 @@ class Chess:
     def reset(self):
         self.moves = []
         self.turn["white"], self.turn["black"] = 1, 0
+        self.king_moved = {"white": False, "black": False}
+        self.rook_moved = {"white_king_side": False, "white_queen_side": False,
+                           "black_king_side": False, "black_queen_side": False}
         self.piece_location = {chr(i): {a: ["", False, [x, 8 - a]] for a in range(1, 9)} for x, i in
                                enumerate(range(97, 105))}
         self._initialize_board()
@@ -82,12 +85,14 @@ class Chess:
                 if piece_name:
                     self.chess_pieces.draw(self.screen, piece_name, self.board_locations[piece_x][piece_y])
 
-    def possible_moves(self, piece_name, piece_coord):
+    def possible_moves(self, piece_name, piece_coord, check_castling=True):
         positions = []
         if not piece_name:
             return positions
 
         x_coord, y_coord = piece_coord
+
+        piece_color = piece_name.split('_')[0]
 
         if piece_name.endswith("bishop"):
             positions = self.diagonal_moves(positions, piece_name, piece_coord)
@@ -105,7 +110,7 @@ class Chess:
                 (x_coord - 1, y_coord - 2), (x_coord - 1, y_coord + 2),
                 (x_coord + 1, y_coord - 2), (x_coord + 1, y_coord + 2)
             ]
-            positions = [[x, y] for x, y in knight_moves if 0 <= x < 8 and 0 <= y < 8]
+            positions.extend([[x, y] for x, y in knight_moves if 0 <= x < 8 and 0 <= y < 8])
 
         elif piece_name.endswith("king"):
             king_moves = [
@@ -114,7 +119,19 @@ class Chess:
                 (x_coord - 1, y_coord - 1), (x_coord - 1, y_coord + 1),
                 (x_coord + 1, y_coord - 1), (x_coord + 1, y_coord + 1)
             ]
-            positions = [[x, y] for x, y in king_moves if 0 <= x < 8 and 0 <= y < 8]
+            positions.extend([[x, y] for x, y in king_moves if 0 <= x < 8 and 0 <= y < 8])
+
+            # Castling moves
+            if check_castling and not self.king_moved[piece_color] and not self.is_king_in_check(piece_color):
+                # King side castling
+                if not self.rook_moved[f"{piece_color}_king_side"]:
+                    if self.is_path_clear_for_castling(x_coord, y_coord, 1, piece_color):
+                        positions.append([x_coord + 2, y_coord])
+
+                # Queen side castling
+                if not self.rook_moved[f"{piece_color}_queen_side"]:
+                    if self.is_path_clear_for_castling(x_coord, y_coord, -1, piece_color):
+                        positions.append([x_coord - 2, y_coord])
 
         elif piece_name.endswith("queen"):
             positions = self.diagonal_moves(positions, piece_name, piece_coord)
@@ -215,19 +232,49 @@ class Chess:
                 if board_piece[1]:
                     board_piece[1] = False
                     piece_name = board_piece[0]
+                    piece_color = piece_name.split('_')[0]
                     self.piece_location[des_col][des_row][0] = piece_name
                     self.piece_location[col][row][0] = ""
+
+                    # Handle castling
+                    if piece_name.endswith("king"):
+                        self.king_moved[piece_color] = True
+                        if abs(destination[0] - (ord(col) - 97)) == 2:
+                            # This is castling
+                            if destination[0] - (ord(col) - 97) == 2:
+                                # King side castling
+                                rook_start_col = 'h'
+                                rook_end_col = chr(97 + destination[0] - 1)
+                                self.rook_moved[f"{piece_color}_king_side"] = True
+                            else:
+                                # Queen side castling
+                                rook_start_col = 'a'
+                                rook_end_col = chr(97 + destination[0] + 1)
+                                self.rook_moved[f"{piece_color}_queen_side"] = True
+                            rook_row = des_row
+                            rook_piece = self.piece_location[rook_start_col][rook_row][0]
+                            self.piece_location[rook_start_col][rook_row][0] = ""
+                            self.piece_location[rook_end_col][rook_row][0] = rook_piece
+                    elif piece_name.endswith("rook"):
+                        # Mark the rook as moved
+                        if col == 'a':
+                            self.rook_moved[f"{piece_color}_queen_side"] = True
+                        elif col == 'h':
+                            self.rook_moved[f"{piece_color}_king_side"] = True
+
                     self.turn["black"], self.turn["white"] = int(not self.turn["black"]), int(not self.turn["white"])
                     src_location = f"{col}{row}"
                     des_location = f"{des_col}{des_row}"
                     print(f"{piece_name} moved from {src_location} to {des_location}")
 
-                    if self.turn["black"] and self.is_king_in_check("white"):
-                        print("White is still in check and did not address it - Black wins!")
-                        self.winner = "Black"
-                    elif self.turn["white"] and self.is_king_in_check("black"):
-                        print("Black is still in check and did not address it - White wins!")
-                        self.winner = "White"
+                    # Check for check after move
+                    opponent_color = 'white' if piece_color == 'black' else 'black'
+                    if self.is_king_in_check(opponent_color):
+                        if self.is_king_in_checkmate(opponent_color):
+                            print(f"{opponent_color.capitalize()} is in checkmate. {piece_color.capitalize()} wins!")
+                            self.winner = piece_color.capitalize()
+                        else:
+                            print(f"{opponent_color.capitalize()} is in check!")
                     return
 
     def diagonal_moves(self, positions, piece_name, piece_coord):
@@ -243,7 +290,7 @@ class Chess:
                 column_char = chr(97 + x)
                 row_no = 8 - y
                 p = self.piece_location[column_char][row_no]
-                if len(p[0]) > 0 and piece_name[:5] != p[:5]:
+                if p[0]:
                     break
         return positions
 
@@ -258,15 +305,44 @@ class Chess:
                 column_char = chr(97 + x)
                 row_no = 8 - y
                 p = self.piece_location[column_char][row_no]
-                if len(p[0]) > 0 and piece_name[:5] != p[:5]:
+                if p[0]:
                     break
         return positions
+
+    def is_path_clear_for_castling(self, king_x, king_y, direction, piece_color):
+        # direction = 1 for king side (right), -1 for queen side (left)
+        if direction == 1:
+            x_range = range(king_x + 1, 7)
+        else:
+            x_range = range(1, king_x)
+
+        # Check if squares between king and rook are empty
+        for x in x_range:
+            if self.is_square_occupied(x, king_y):
+                return False
+
+        # Check if squares the king passes over are not under attack
+        if direction == 1:
+            squares_to_check = [[king_x + 1, king_y], [king_x + 2, king_y]]
+        else:
+            squares_to_check = [[king_x - 1, king_y], [king_x - 2, king_y]]
+
+        for square in squares_to_check:
+            if self.is_position_attacked(square, piece_color):
+                return False
+
+        return True
+
+    def is_square_occupied(self, x, y):
+        col_char = chr(97 + x)
+        row_no = 8 - y
+        piece_name = self.piece_location[col_char][row_no][0]
+        return bool(piece_name)
 
     def capture_piece(self, chess_board_coord, piece_coord):
         column_char, row_no = chess_board_coord
         p = self.piece_location[column_char][row_no]
 
-        # Проверка, что король действительно захватывается, а не просто двигается
         if p[0] == "white_king" and self.is_king_in_check('white'):
             self.winner = "Black"
             print("Black wins")
@@ -305,21 +381,7 @@ class Chess:
         for col, rows in self.piece_location.items():
             for row, piece in rows.items():
                 if piece[0].startswith(opponent_color):
-                    piece_moves = self.possible_moves(piece[0], [ord(col) - 97, 8 - row])
+                    piece_moves = self.possible_moves(piece[0], [ord(col) - 97, 8 - row], check_castling=False)
                     if position in piece_moves:
                         return True
         return False
-
-    def simulate_move(self, original_position, move):
-        col, row = chr(97 + original_position[0]), 8 - original_position[1]
-        target_col, target_row = chr(97 + move[0]), 8 - move[1]
-        target_piece = self.piece_location[target_col][target_row][0]
-        self.piece_location[target_col][target_row][0] = self.piece_location[col][row][0]
-        self.piece_location[col][row][0] = ""
-        return target_piece
-
-    def undo_move(self, original_position, move, target_piece):
-        col, row = chr(97 + original_position[0]), 8 - original_position[1]
-        target_col, target_row = chr(97 + move[0]), 8 - move[1]
-        self.piece_location[col][row][0] = self.piece_location[target_col][target_row][0]
-        self.piece_location[target_col][target_row][0] = target_piece
