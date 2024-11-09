@@ -8,8 +8,8 @@ from utils import Utils
 class Game:
     def __init__(self):
         pygame.display.init()
-        pygame.font.init()
         self.screen = pygame.display.set_mode([640, 750])
+        pygame.font.init()
         pygame.display.set_caption("Chess")
         pygame.display.set_icon(pygame.image.load(os.path.join("res", "chess_icon.png")))
         self.clock, self.menu_showed, self.running = pygame.time.Clock(), False, True
