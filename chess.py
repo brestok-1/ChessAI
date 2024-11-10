@@ -1,387 +1,222 @@
 import pygame
 
-from piece import Piece
+from piece import Knight, Rook, King, Bishop, Queen, Pawn
+from spritesheets import PieceSprites
 from utils import Utils
 
 
 class Chess:
     def __init__(self, screen, pieces_src, square_coords, square_length):
         self.screen = screen
-        self.chess_pieces = Piece(pieces_src, cols=6, rows=2)
-        self.board_locations = square_coords
+        self.square_coords = square_coords
         self.square_length = square_length
-        self.turn = {"black": 0, "white": 0}
-        self.moves = []
+        self.turn = 'white'
         self.utils = Utils()
-        self.pieces = {
-            "white_pawn": 5, "white_knight": 3, "white_bishop": 2,
-            "white_rook": 4, "white_king": 0, "white_queen": 1,
-            "black_pawn": 11, "black_knight": 9, "black_bishop": 8,
-            "black_rook": 10, "black_king": 6, "black_queen": 7
-        }
-        self.captured = []
-        self.winner = ""
+        self.piece_sprites = PieceSprites(pieces_src, cols=6, rows=2)
+        self.board = [[None for _ in range(8)] for _ in range(8)]
+        self.selected_piece = None
+        self.moves = []
+        self.winner = None
         self.reset()
 
     def reset(self):
+        self.turn = 'white'
+        self.selected_piece = None
         self.moves = []
-        self.turn["white"], self.turn["black"] = 1, 0
-        self.king_moved = {"white": False, "black": False}
-        self.rook_moved = {"white_king_side": False, "white_queen_side": False,
-                           "black_king_side": False, "black_queen_side": False}
+        self.winner = None
+        self.initialize_board()
         self.piece_location = {chr(i): {a: ["", False, [x, 8 - a]] for a in range(1, 9)} for x, i in
                                enumerate(range(97, 105))}
-        self._initialize_board()
 
-    def _initialize_board(self):
-        for file, rank in self.piece_location.items():
-            for row in range(1, 9):
-                if row == 1:
-                    rank[row][0] = {"a": "white_rook", "h": "white_rook", "b": "white_knight", "g": "white_knight",
-                                    "c": "white_bishop", "f": "white_bishop", "d": "white_queen",
-                                    "e": "white_king"}.get(file, "")
-                elif row == 2:
-                    rank[row][0] = "white_pawn"
-                elif row == 7:
-                    rank[row][0] = "black_pawn"
-                elif row == 8:
-                    rank[row][0] = {"a": "black_rook", "h": "black_rook", "b": "black_knight", "g": "black_knight",
-                                    "c": "black_bishop", "f": "black_bishop", "d": "black_queen",
-                                    "e": "black_king"}.get(file, "")
+    def initialize_board(self):
+        # Place white pieces
+        for x in range(8):
+            self.board[x][6] = Pawn('white', [x, 6])
+        self.board[0][7] = Rook('white', [0, 7])
+        self.board[1][7] = Knight('white', [1, 7])
+        self.board[2][7] = Bishop('white', [2, 7])
+        self.board[3][7] = Queen('white', [3, 7])
+        self.board[4][7] = King('white', [4, 7])
+        self.board[5][7] = Bishop('white', [5, 7])
+        self.board[6][7] = Knight('white', [6, 7])
+        self.board[7][7] = Rook('white', [7, 7])
+
+        # Place black pieces
+        for x in range(8):
+            self.board[x][1] = Pawn('black', [x, 1])
+        self.board[0][0] = Rook('black', [0, 0])
+        self.board[1][0] = Knight('black', [1, 0])
+        self.board[2][0] = Bishop('black', [2, 0])
+        self.board[3][0] = Queen('black', [3, 0])
+        self.board[4][0] = King('black', [4, 0])
+        self.board[5][0] = Bishop('black', [5, 0])
+        self.board[6][0] = Knight('black', [6, 0])
+        self.board[7][0] = Rook('black', [7, 0])
 
     def play_turn(self):
-        white_color = (255, 255, 255)
-        small_font = pygame.font.SysFont("comicsansms", 20)
-        turn_text = small_font.render(f"Turn: {'Black' if self.turn['black'] else 'White'}", True, white_color)
-        self.screen.blit(turn_text, ((self.screen.get_width() - turn_text.get_width()) // 2, 10))
-        self.move_piece("black" if self.turn["black"] else "white")
+        self.draw_turn_indicator()
+        if self.utils.left_click_event():
+            x, y = self.get_board_coords(self.utils.get_mouse_event())
+            if x is not None and y is not None:
+                self.handle_click(x, y)
+
+    def handle_click(self, x, y):
+        piece = self.get_piece_at(x, y)
+        if piece and piece.color == self.turn:
+            self.selected_piece = piece
+            self.moves = piece.possible_moves(self)
+        elif self.selected_piece and [x, y] in self.moves:
+            self.move_piece(self.selected_piece, x, y)
+            self.end_turn()
+        else:
+            self.selected_piece = None
+            self.moves = []
+
+    def move_piece(self, piece, x, y):
+        self.board[piece.position[0]][piece.position[1]] = None
+        captured_piece = self.get_piece_at(x, y)
+        if captured_piece:
+            if isinstance(captured_piece, King):
+                self.winner = piece.color
+        piece.move([x, y])
+        self.board[x][y] = piece
+
+    def end_turn(self):
+        self.turn = 'black' if self.turn == 'white' else 'white'
+        self.selected_piece = None
+        self.moves = []
+        if self.is_king_in_checkmate(self.turn):
+            self.winner = 'white' if self.turn == 'black' else 'black'
 
     def draw_pieces(self):
-        colors = {
-            "black": (0, 194, 39, 170),
-            "white": (28, 21, 212, 170)
-        }
+        if self.selected_piece:
+            for move in self.moves:
+                coords = self.square_coords[move[0]][move[1]]
+                pygame.draw.rect(self.screen, (0, 255, 0),
+                                 (coords[0], coords[1], self.square_length, self.square_length), 3)
 
-        surfaces = {
-            "black": pygame.Surface((self.square_length, self.square_length), pygame.SRCALPHA),
-            "white": pygame.Surface((self.square_length, self.square_length), pygame.SRCALPHA)
-        }
-        for color, surface in surfaces.items():
-            surface.fill(colors[color])
+        for x in range(8):
+            for y in range(8):
+                piece = self.get_piece_at(x, y)
+                if piece:
+                    coords = self.square_coords[x][y]
+                    self.piece_sprites.draw(self.screen, piece, coords)
 
-        for val in self.piece_location.values():
-            for value in val.values():
-                piece_name, is_selected, (piece_x, piece_y) = value
-                if is_selected and piece_name.startswith(("black", "white")):
-                    color = "black" if piece_name.startswith("black") else "white"
-                    self.screen.blit(surfaces[color], self.board_locations[piece_x][piece_y])
-                    for move in self.moves:
-                        if all(0 <= coord < 8 for coord in move):
-                            self.screen.blit(surfaces[color], self.board_locations[move[0]][move[1]])
+    def draw_turn_indicator(self):
+        font = pygame.font.SysFont("comicsansms", 20)
+        turn_text = font.render(f"Turn: {self.turn.capitalize()}", True, (255, 255, 255))
+        self.screen.blit(turn_text, ((self.screen.get_width() - turn_text.get_width()) // 2, 10))
 
-        for val in self.piece_location.values():
-            for value in val.values():
-                piece_name, _, (piece_x, piece_y) = value
-                if piece_name:
-                    self.chess_pieces.draw(self.screen, piece_name, self.board_locations[piece_x][piece_y])
-
-    def possible_moves(self, piece_name, piece_coord, check_castling=True):
-        positions = []
-        if not piece_name:
-            return positions
-
-        x_coord, y_coord = piece_coord
-
-        piece_color = piece_name.split('_')[0]
-
-        if piece_name.endswith("bishop"):
-            positions = self.diagonal_moves(positions, piece_name, piece_coord)
-
-        elif piece_name.endswith("pawn"):
-            positions = self._pawn_moves(piece_name, x_coord, y_coord)
-
-        elif piece_name.endswith("rook"):
-            positions = self.linear_moves(positions, piece_name, piece_coord)
-
-        elif piece_name.endswith("knight"):
-            knight_moves = [
-                (x_coord - 2, y_coord - 1), (x_coord - 2, y_coord + 1),
-                (x_coord + 2, y_coord - 1), (x_coord + 2, y_coord + 1),
-                (x_coord - 1, y_coord - 2), (x_coord - 1, y_coord + 2),
-                (x_coord + 1, y_coord - 2), (x_coord + 1, y_coord + 2)
-            ]
-            positions.extend([[x, y] for x, y in knight_moves if 0 <= x < 8 and 0 <= y < 8])
-
-        elif piece_name.endswith("king"):
-            king_moves = [
-                (x_coord, y_coord - 1), (x_coord, y_coord + 1),
-                (x_coord - 1, y_coord), (x_coord + 1, y_coord),
-                (x_coord - 1, y_coord - 1), (x_coord - 1, y_coord + 1),
-                (x_coord + 1, y_coord - 1), (x_coord + 1, y_coord + 1)
-            ]
-            positions.extend([[x, y] for x, y in king_moves if 0 <= x < 8 and 0 <= y < 8])
-
-            # Castling moves
-            if check_castling and not self.king_moved[piece_color] and not self.is_king_in_check(piece_color):
-                # King side castling
-                if not self.rook_moved[f"{piece_color}_king_side"]:
-                    if self.is_path_clear_for_castling(x_coord, y_coord, 1, piece_color):
-                        positions.append([x_coord + 2, y_coord])
-
-                # Queen side castling
-                if not self.rook_moved[f"{piece_color}_queen_side"]:
-                    if self.is_path_clear_for_castling(x_coord, y_coord, -1, piece_color):
-                        positions.append([x_coord - 2, y_coord])
-
-        elif piece_name.endswith("queen"):
-            positions = self.diagonal_moves(positions, piece_name, piece_coord)
-            positions = self.linear_moves(positions, piece_name, piece_coord)
-
-        return self._filter_positions(piece_name, positions)
-
-    def _pawn_moves(self, piece_name, x_coord, y_coord):
-        positions = []
-        column_char = chr(97 + x_coord)
-        row_no = 8 - y_coord
-        direction = 1 if piece_name == "black_pawn" else -1
-        start_row = 1 if piece_name == "black_pawn" else 6
-
-        if 0 <= y_coord + direction < 8:
-            row_no -= direction
-            front_piece = self.piece_location[column_char][row_no][0]
-            if not front_piece:
-                positions.append([x_coord, y_coord + direction])
-                if y_coord == start_row:
-                    row_no -= direction
-                    front_piece = self.piece_location[column_char][row_no][0]
-                    if not front_piece:
-                        positions.append([x_coord, y_coord + 2 * direction])
-
-        for dx in [-1, 1]:
-            nx, ny = x_coord + dx, y_coord + direction
-            if 0 <= nx < 8 and 0 <= ny < 8:
-                column_char = chr(97 + nx)
-                row_no = 8 - ny
-                to_capture = self.piece_location[column_char][row_no]
-                if to_capture[0].startswith("white" if piece_name == "black_pawn" else "black"):
-                    positions.append([nx, ny])
-
-        return positions
-
-    def _filter_positions(self, piece_name, positions):
-        to_remove = []
-        for x, y in positions:
-            column_char = chr(97 + x)
-            row_no = 8 - y
-            des_piece_name = self.piece_location[column_char][row_no][0]
-            if des_piece_name.startswith(piece_name[:5]):
-                to_remove.append([x, y])
-        return [pos for pos in positions if pos not in to_remove]
-
-    def move_piece(self, turn):
-        square = self.get_selected_square()
-        if not square:
-            return
-
-        piece_name, column_char, row_no = square
-        piece_color = piece_name[:5]
-        x, y = self.piece_location[column_char][row_no][2]
-
-        if piece_name and piece_color == turn:
-            self.moves = self.possible_moves(piece_name, [x, y])
-            for k, v in self.piece_location.items():
-                for key in v:
-                    v[key][1] = False
-            self.piece_location[column_char][row_no][1] = True
-
-        for move in self.moves:
-            if move == [x, y]:
-                if not self.piece_location[column_char][row_no][0] or piece_color == turn:
-                    self.validate_move([x, y])
-                else:
-                    self.capture_piece([column_char, row_no], [x, y])
-
-    def get_selected_square(self):
-        if self.utils.left_click_event():
-            mouse_event = self.utils.get_mouse_event()
-            for i, row in enumerate(self.board_locations):
-                for j, loc in enumerate(row):
-                    rect = pygame.Rect(loc[0], loc[1], self.square_length, self.square_length)
-                    if rect.collidepoint(mouse_event):
-                        selected = [rect.x, rect.y]
-                        for k, board_row in enumerate(self.board_locations):
-                            try:
-                                l = board_row.index(selected)
-                                for val in self.piece_location.values():
-                                    for piece in val.values():
-                                        if not piece[1]:
-                                            piece[1] = False
-                                column_char, row_no = chr(97 + k), 8 - l
-                                piece_name = self.piece_location[column_char][row_no][0]
-                                return [piece_name, column_char, row_no]
-                            except ValueError:
-                                pass
+    def get_piece_at(self, x, y):
+        if 0 <= x < 8 and 0 <= y < 8:
+            return self.board[x][y]
         return None
 
-    def validate_move(self, destination):
-        des_col = chr(97 + destination[0])
-        des_row = 8 - destination[1]
+    def is_empty(self, x, y):
+        return self.get_piece_at(x, y) is None
 
-        for col, rows in self.piece_location.items():
-            for row, board_piece in rows.items():
-                if board_piece[1]:
-                    board_piece[1] = False
-                    piece_name = board_piece[0]
-                    piece_color = piece_name.split('_')[0]
-                    self.piece_location[des_col][des_row][0] = piece_name
-                    self.piece_location[col][row][0] = ""
+    def is_enemy_piece(self, color, x, y):
+        piece = self.get_piece_at(x, y)
+        return piece and piece.color != color
 
-                    # Handle castling
-                    if piece_name.endswith("king"):
-                        self.king_moved[piece_color] = True
-                        if abs(destination[0] - (ord(col) - 97)) == 2:
-                            # This is castling
-                            if destination[0] - (ord(col) - 97) == 2:
-                                # King side castling
-                                rook_start_col = 'h'
-                                rook_end_col = chr(97 + destination[0] - 1)
-                                self.rook_moved[f"{piece_color}_king_side"] = True
-                            else:
-                                # Queen side castling
-                                rook_start_col = 'a'
-                                rook_end_col = chr(97 + destination[0] + 1)
-                                self.rook_moved[f"{piece_color}_queen_side"] = True
-                            rook_row = des_row
-                            rook_piece = self.piece_location[rook_start_col][rook_row][0]
-                            self.piece_location[rook_start_col][rook_row][0] = ""
-                            self.piece_location[rook_end_col][rook_row][0] = rook_piece
-                    elif piece_name.endswith("rook"):
-                        # Mark the rook as moved
-                        if col == 'a':
-                            self.rook_moved[f"{piece_color}_queen_side"] = True
-                        elif col == 'h':
-                            self.rook_moved[f"{piece_color}_king_side"] = True
+    def filter_valid_moves(self, piece, moves):
+        valid_moves = []
+        for x, y in moves:
+            if 0 <= x < 8 and 0 <= y < 8:
+                target_piece = self.get_piece_at(x, y)
+                if not target_piece or target_piece.color != piece.color:
+                    valid_moves.append([x, y])
+        return valid_moves
 
-                    self.turn["black"], self.turn["white"] = int(not self.turn["black"]), int(not self.turn["white"])
-                    src_location = f"{col}{row}"
-                    des_location = f"{des_col}{des_row}"
-                    print(f"{piece_name} moved from {src_location} to {des_location}")
-
-                    # Check for check after move
-                    opponent_color = 'white' if piece_color == 'black' else 'black'
-                    if self.is_king_in_check(opponent_color):
-                        if self.is_king_in_checkmate(opponent_color):
-                            print(f"{opponent_color.capitalize()} is in checkmate. {piece_color.capitalize()} wins!")
-                            self.winner = piece_color.capitalize()
-                        else:
-                            print(f"{opponent_color.capitalize()} is in check!")
-                    return
-
-    def diagonal_moves(self, positions, piece_name, piece_coord):
-        directions = [(-1, -1), (1, 1), (-1, 1), (1, -1)]
-        for dx, dy in directions:
-            x, y = piece_coord
-            while True:
-                x += dx
-                y += dy
-                if not (0 <= x <= 7 and 0 <= y <= 7):
-                    break
-                positions.append([x, y])
-                column_char = chr(97 + x)
-                row_no = 8 - y
-                p = self.piece_location[column_char][row_no]
-                if p[0]:
-                    break
-        return positions
-
-    def linear_moves(self, positions, piece_name, piece_coord):
+    def get_straight_moves(self, piece):
         directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        return self.get_moves_in_directions(piece, directions)
+
+    def get_diagonal_moves(self, piece):
+        directions = [[-1, -1], [1, 1], [-1, 1], [1, -1]]
+        return self.get_moves_in_directions(piece, directions)
+
+    def get_moves_in_directions(self, piece, directions):
+        moves = []
+        x, y = piece.position
         for dx, dy in directions:
-            x, y = piece_coord
-            while 0 <= x + dx < 8 and 0 <= y + dy < 8:
-                x += dx
-                y += dy
-                positions.append([x, y])
-                column_char = chr(97 + x)
-                row_no = 8 - y
-                p = self.piece_location[column_char][row_no]
-                if p[0]:
+            nx, ny = x, y
+            while True:
+                nx += dx
+                ny += dy
+                if 0 <= nx < 8 and 0 <= ny < 8:
+                    target_piece = self.get_piece_at(nx, ny)
+                    if not target_piece:
+                        moves.append([nx, ny])
+                    elif target_piece.color != piece.color:
+                        moves.append([nx, ny])
+                        break
+                    else:
+                        break
+                else:
                     break
-        return positions
-
-    def is_path_clear_for_castling(self, king_x, king_y, direction, piece_color):
-        # direction = 1 for king side (right), -1 for queen side (left)
-        if direction == 1:
-            x_range = range(king_x + 1, 7)
-        else:
-            x_range = range(1, king_x)
-
-        # Check if squares between king and rook are empty
-        for x in x_range:
-            if self.is_square_occupied(x, king_y):
-                return False
-
-        # Check if squares the king passes over are not under attack
-        if direction == 1:
-            squares_to_check = [[king_x + 1, king_y], [king_x + 2, king_y]]
-        else:
-            squares_to_check = [[king_x - 1, king_y], [king_x - 2, king_y]]
-
-        for square in squares_to_check:
-            if self.is_position_attacked(square, piece_color):
-                return False
-
-        return True
-
-    def is_square_occupied(self, x, y):
-        col_char = chr(97 + x)
-        row_no = 8 - y
-        piece_name = self.piece_location[col_char][row_no][0]
-        return bool(piece_name)
-
-    def capture_piece(self, chess_board_coord, piece_coord):
-        column_char, row_no = chess_board_coord
-        p = self.piece_location[column_char][row_no]
-
-        if p[0] == "white_king" and self.is_king_in_check('white'):
-            self.winner = "Black"
-            print("Black wins")
-        elif p[0] == "black_king" and self.is_king_in_check('black'):
-            self.winner = "White"
-            print("White wins")
-
-        self.captured.append(p)
-        self.validate_move(piece_coord)
+        return moves
 
     def is_king_in_check(self, color):
-        king_position = self.find_king(color)
-        return self.is_position_attacked(king_position, color)
+        king = self.find_king(color)
+        return self.is_position_attacked(king.position, color)
 
-    def is_king_in_checkmate(self, king_color):
-        if not self.is_king_in_check(king_color):
+    def is_king_in_checkmate(self, color):
+        if not self.is_king_in_check(color):
             return False
-        king_position = self.find_king(king_color)
-        possible_moves = self.possible_moves(f"{king_color}_king", king_position)
-
-        for move in possible_moves:
-            if not self.is_position_attacked(move, king_color):
+        king = self.find_king(color)
+        moves = king.possible_moves(self)
+        for move in moves:
+            if not self.is_position_attacked(move, color):
                 return False
+        return True
+
+    def is_position_attacked(self, position, color):
+        opponent_color = 'black' if color == 'white' else 'white'
+        for x in range(8):
+            for y in range(8):
+                piece = self.get_piece_at(x, y)
+                if piece and piece.color == opponent_color:
+                    if position in piece.possible_moves(self, is_attacking=True):
+                        return True
+        return False
+
+    def find_king(self, color):
+        for x in range(8):
+            for y in range(8):
+                piece = self.get_piece_at(x, y)
+                if isinstance(piece, King) and piece.color == color:
+                    return piece
+        return None
+
+    def can_castle(self, color, side):
+        king = self.find_king(color)
+        if king.has_moved:
+            return False
+
+        if side == 'king':
+            rook = self.get_piece_at(7, king.position[1])
+        else:
+            rook = self.get_piece_at(0, king.position[1])
+
+        if not isinstance(rook, Rook) or rook.color != color or rook.has_moved:
+            return False
+
+        # Проверяем, что клетки между королем и ладьей пусты
+        start = min(king.position[0], rook.position[0]) + 1
+        end = max(king.position[0], rook.position[0])
+        for x in range(start, end):
+            if not self.is_empty(x, king.position[1]):
+                return False
+            # Дополнительно можно проверить, что эти клетки не находятся под атакой
 
         return True
 
-    def find_king(self, king_color):
-        king_name = f"{king_color}_king"
-        for col, rows in self.piece_location.items():
-            for row, piece in rows.items():
-                if piece[0] == king_name:
-                    return [ord(col) - 97, 8 - row]
-
-    def is_position_attacked(self, position, king_color):
-        opponent_color = "black" if king_color == "white" else "white"
-        for col, rows in self.piece_location.items():
-            for row, piece in rows.items():
-                if piece[0].startswith(opponent_color):
-                    piece_moves = self.possible_moves(piece[0], [ord(col) - 97, 8 - row], check_castling=False)
-                    if position in piece_moves:
-                        return True
-        return False
+    def get_board_coords(self, mouse_pos):
+        for x in range(8):
+            for y in range(8):
+                rect = pygame.Rect(self.square_coords[x][y][0], self.square_coords[x][y][1],
+                                   self.square_length, self.square_length)
+                if rect.collidepoint(mouse_pos):
+                    return x, y
+        return None, None
