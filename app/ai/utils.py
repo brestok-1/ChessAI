@@ -11,12 +11,15 @@ def board_to_matrix(chess):
             if piece is not None:
                 piece_color = 0 if piece.color == 'white' else 6
                 piece_type = piece.piece_type
-                matrix[piece_type + piece_color, y, x] = 1
+                row = 7 - y
+                matrix[piece_type + piece_color, row, x] = 1
 
     legal_moves = chess.get_legal_moves()
     for (_, _), (to_x, to_y) in legal_moves:
-        matrix[12, to_y, to_x] = 1
+        row_to = 7 - to_y
+        matrix[12, row_to, to_x] = 1
     return matrix
+
 
 def board_to_matrix_original(board: Board) -> np.ndarray:
     # 8x8 is a size of the chess board.

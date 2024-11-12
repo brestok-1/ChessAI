@@ -1,7 +1,6 @@
 import os
 
 import pygame
-from pygame.locals import *
 
 from app.chess.chess import Chess
 from app.chess.piece import Queen, Rook, Bishop, Knight

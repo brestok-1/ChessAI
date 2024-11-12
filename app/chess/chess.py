@@ -1,3 +1,5 @@
+import time
+
 import pygame
 
 from app.ai.prediction import predict_move
@@ -14,7 +16,7 @@ class Chess:
         self.square_length = square_length
         self.turn = 'white'
         self.utils = Utils()
-        # self.piece_sprites = PieceSprites(pieces_src, cols=6, rows=2)
+        self.piece_sprites = PieceSprites(pieces_src, cols=6, rows=2)
         self.board: list = [[None for _ in range(8)] for _ in range(8)]
         self.selected_piece = None
         self.moves = []
