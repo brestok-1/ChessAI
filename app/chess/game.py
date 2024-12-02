@@ -17,6 +17,9 @@ class Game:
         pygame.display.set_icon(pygame.image.load(settings.BASE_DIR / 'res' / 'chess_icon.png'))
         self.clock, self.menu_showed, self.running = pygame.time.Clock(), False, True
 
+        self.ai_thinking_start_time = None
+        self.ai_thinking_delay = 1000
+
     def start_game(self):
         self.setup_board()
         clock = pygame.time.Clock()
@@ -26,7 +29,15 @@ class Game:
                 self.menu()
             else:
                 if self.chess.turn == 'black':
-                    self.chess.make_ai_move()
+                    if self.ai_thinking_start_time is None:
+                        self.ai_thinking_start_time = pygame.time.get_ticks()
+                    else:
+                        current_time = pygame.time.get_ticks()
+                        if current_time - self.ai_thinking_start_time >= self.ai_thinking_delay:
+                            self.chess.make_ai_move()
+                            self.ai_thinking_start_time = None
+                else:
+                    self.ai_thinking_start_time = None
                 self.display_game()
             pygame.display.flip()
             pygame.event.pump()

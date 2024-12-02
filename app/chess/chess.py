@@ -1,5 +1,3 @@
-import time
-
 import pygame
 
 from app.ai.prediction import predict_move
